@@ -211,8 +211,8 @@ def compose_message(path, monday, friday, sender, recipient, preview):
     msg["X-Report-Week"]=friday.isoformat()
     # Pull 5-8 executive-summary lines from the report; avoid inventing conclusions.
     lines = [x.strip() for x in preview.splitlines() if x.strip()]
-    summary = [re.sub(r"^[-*•\\d.)\\s]+", "", x).strip()
-               for x in lines if re.match(r"^\\s*(?:[-*•]|\\d+[.)])\\s+", x)]
+    summary = [re.sub(r"^[-*•\d.)\s]+", "", x).strip()
+               for x in lines if re.match(r"^\s*(?:[-*•]|\d+[.)])\s+", x)]
     summary = [s for s in summary if len(s) > 20][:8]
     if len(summary) < 5:
         summary = [
@@ -223,9 +223,9 @@ def compose_message(path, monday, friday, sender, recipient, preview):
             "下周催化、条件情景及需证伪的关键变量详见报告末章。",
         ]
     msg.set_content(
-        f"统计区间（美东）：{monday.isoformat()} 至 {friday.isoformat()}。\\n\\n"
-        + "\\n".join(f"{i}. {item}" for i,item in enumerate(summary,1))
-        + f"\\n\\nWord 全文及来源见附件：{path.name}\\n"
+        f"统计区间（美东）：{monday.isoformat()} 至 {friday.isoformat()}。\n\n"
+        + "\n".join(f"{i}. {item}" for i,item in enumerate(summary,1))
+        + f"\n\nWord 全文及来源见附件：{path.name}\n"
     )
     msg.add_attachment(path.read_bytes(),maintype="application",
                        subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -303,7 +303,7 @@ def main():
         record("dry_run_complete",file=path.name,bytes=path.stat().st_size)
         print("Dry run: report produced; no email sent.")
         return
-    msg=compose_message(path,monday,friday,user,recipient,body[:500])
+    msg=compose_message(path,monday,friday,user,recipient,body)
     with smtplib.SMTP_SSL("smtp.gmail.com",465,timeout=45) as smtp:
         smtp.login(user,password)
         smtp.send_message(msg)
