@@ -209,12 +209,23 @@ def compose_message(path, monday, friday, sender, recipient, preview):
     msg["To"]=recipient
     msg["Subject"]=f"美股深度周报 {monday.isoformat()} 至 {friday.isoformat()}"
     msg["X-Report-Week"]=friday.isoformat()
+    # Pull 5-8 executive-summary lines from the report; avoid inventing conclusions.
+    lines = [x.strip() for x in preview.splitlines() if x.strip()]
+    summary = [re.sub(r"^[-*•\\d.)\\s]+", "", x).strip()
+               for x in lines if re.match(r"^\\s*(?:[-*•]|\\d+[.)])\\s+", x)]
+    summary = [s for s in summary if len(s) > 20][:8]
+    if len(summary) < 5:
+        summary = [
+            "本周标普500、纳指100及VGT的相对表现及定价逻辑详见报告第二章。",
+            "美债利率、宏观预期和估值敏感性详见报告第四章。",
+            "半导体、AI服务器、存储及网络设备行业景气详见报告第五章。",
+            "当周4至8只动态精选个股的盈利、指引与风险详见报告第六章。",
+            "下周催化、条件情景及需证伪的关键变量详见报告末章。",
+        ]
     msg.set_content(
-        f"本期美股深度周报统计区间为美东时间 {monday.isoformat()} 至 {friday.isoformat()}。\n"
-        "Word 全文见附件，重点讨论标普500、纳指100、VGT，以及宏观利率、"
-        "科技细分行业、动态个股、未来两周催化及条件情景。\n\n"
-        "结论以附件执行摘要和来源为准。\n\n"
-        f"附件文件：{path.name}\n"
+        f"统计区间（美东）：{monday.isoformat()} 至 {friday.isoformat()}。\\n\\n"
+        + "\\n".join(f"{i}. {item}" for i,item in enumerate(summary,1))
+        + f"\\n\\nWord 全文及来源见附件：{path.name}\\n"
     )
     msg.add_attachment(path.read_bytes(),maintype="application",
                        subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
