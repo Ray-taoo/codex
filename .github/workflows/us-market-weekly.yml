@@ -1,0 +1,54 @@
+name: US Market Weekly Report
+
+on:
+  schedule:
+    - cron: '30 0 * * 6'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Generate report without sending email'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: us-market-weekly-report
+  cancel-in-progress: false
+
+jobs:
+  generate-and-email:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      MAIL_TO: ${{ secrets.MAIL_TO }}
+      REPORT_MODEL: ${{ vars.REPORT_MODEL || 'gpt-4.1' }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: us-weekly-report/requirements.txt
+      - name: Install requirements
+        run: pip install -r us-weekly-report/requirements.txt
+      - name: Run report pipeline
+        run: python us-weekly-report/run.py
+      - name: Save report and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: us-market-weekly-${{ github.run_id }}
+          path: |
+            output/*.docx
+            output/status.json
+          if-no-files-found: warn
+          retention-days: 90
