@@ -38,6 +38,8 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: us-weekly-report/requirements.txt
+      - name: Compile-check report script
+        run: python -m py_compile us-weekly-report/run.py
       - name: Install requirements
         run: pip install -r us-weekly-report/requirements.txt
       - name: Run report pipeline
