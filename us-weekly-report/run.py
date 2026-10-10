@@ -20,7 +20,8 @@ import pandas as pd
 import yfinance as yf
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
-from openai import OpenAI
+from google import genai
+from google.genai import types
 
 ROOT = Path("output")
 ROOT.mkdir(exist_ok=True)
@@ -150,15 +151,32 @@ def research_sections(client, model, monday, friday, market, rates, ranking, mis
     )
     outputs = []
     for title, instruction in [("第1—6章",part1),("第7—12章",part2)]:
-        response = client.responses.create(
-            model=model, tools=[{"type":"web_search"}],
-            instructions=system,
-            input=f"【输入行情数据】\n{reference}\n\n【写作任务：{title}】\n{instruction}",
-            max_output_tokens=12500,
+        response = client.models.generate_content(
+            model=model,
+            contents=f"【输入行情数据】\n{reference}\n\n【写作任务：{title}】\n{instruction}",
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+                temperature=0.2,
+                max_output_tokens=12000,
+            ),
         )
-        content = response.output_text or ""
-        if len(content) < 2000:
+        content = response.text or ""
+        if len(content) < 1800:
             raise RuntimeError(f"Research output too short: {title}: {len(content)}")
+        # Grounding evidence: retain original returned source URLs explicitly in document.
+        seen = set()
+        links = []
+        for candidate in response.candidates or []:
+            grounding = getattr(candidate, "grounding_metadata", None)
+            for chunk in (getattr(grounding, "grounding_chunks", None) or []):
+                web = getattr(chunk, "web", None)
+                url = getattr(web, "uri", None)
+                if url and url not in seen:
+                    seen.add(url)
+                    links.append(f"- {getattr(web, 'title', '')}: {url}")
+        if links:
+            content += "\n\n### 本部分联网核验来源（模型引用链接）\n" + "\n".join(links[:35])
         outputs.append(content)
     return "\n\n".join(outputs)
 
@@ -277,12 +295,12 @@ def main():
     path=ROOT / f"美股周报_{monday.isoformat()}_{friday.isoformat()}.docx"
     subject=f"美股深度周报 {monday.isoformat()} 至 {friday.isoformat()}"
     dry=os.environ.get("DRY_RUN","false").lower()=="true"
-    api=os.environ.get("OPENAI_API_KEY","")
+    api=os.environ.get("GEMINI_API_KEY","")
     user=os.environ.get("GMAIL_USER","")
     password=os.environ.get("GMAIL_APP_PASSWORD","").replace(" ","")
     recipient=os.environ.get("MAIL_TO","")
     if not api or not dry and not all([user,password,recipient]):
-        raise RuntimeError("Missing required repository Secrets: OPENAI_API_KEY / GMAIL_USER / GMAIL_APP_PASSWORD / MAIL_TO")
+        raise RuntimeError("Missing required repository Secrets: GEMINI_API_KEY / GMAIL_USER / GMAIL_APP_PASSWORD / MAIL_TO")
     # Check before incurring LLM expense; if inaccessible, proceed but fail on post-send verification.
     if not dry:
         try:
@@ -294,8 +312,8 @@ def main():
             record("imap_precheck_unavailable",reason=str(exc)[:200])
     market,missing,ranking=summarize_prices(monday,friday)
     rates=treasury_rates(monday,friday)
-    client=OpenAI(api_key=api,timeout=180)
-    body=research_sections(client,os.environ.get("REPORT_MODEL","gpt-4.1"),
+    client=genai.Client(api_key=api, http_options=types.HttpOptions(timeout=180000))
+    body=research_sections(client,os.environ.get("REPORT_MODEL","gemini-2.5-flash"),
                            monday,friday,market,rates,ranking,missing)
     write_docx(body,path,monday,friday)
     record("report_ready",file=path.name,bytes=path.stat().st_size)
